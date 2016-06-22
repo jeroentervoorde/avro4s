@@ -79,6 +79,11 @@ object Build extends Build {
       libraryDependencies += "com.chuusai" %% "shapeless" % "2.2.5"
     )
     .settings(name := "avro4s-macros")
+    .settings(
+      resolvers += Resolver.sonatypeRepo("releases"),
+      addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0" cross CrossVersion.full)
+
+  )
 
   lazy val core = Project("avro4s-core", file("avro4s-core"))
     .settings(rootSettings: _*)
