@@ -132,39 +132,14 @@ object ToRecord {
       val mapKey: String = name.decodedName.toString
       val sig = f.typeSignature
 
-      f.typeSignature match {
-        case r if !isBuiltIn(r) =>
-          q"""{
+      q"""{
             import com.sksamuel.avro4s.ToSchema._
             import com.sksamuel.avro4s.ToValue._
             import com.sksamuel.avro4s.SchemaFor._
 
-            val toRecord = ToRecord[$sig]
-            com.sksamuel.avro4s.ToRecord.converter[$sig]($mapKey)(com.sksamuel.avro4s.ToValue.GenericWriter[$sig](toRecord))
+            com.sksamuel.avro4s.ToRecord.converter[$sig]($mapKey)
           }
-          """
-        case t @ TypeRef(_, _, optType :: Nil) if !isBuiltIn(optType) =>
-          q"""{
-              import com.sksamuel.avro4s.ToSchema._
-              import com.sksamuel.avro4s.ToValue._
-              import com.sksamuel.avro4s.SchemaFor._
-
-              val toRecord = ToRecord[$optType]
-              implicit val toValue = com.sksamuel.avro4s.ToValue.GenericWriter[$optType](toRecord)
-
-              com.sksamuel.avro4s.ToRecord.converter[$sig]($mapKey)
-            }
-         """
-        case _ =>
-          q"""{
-              import com.sksamuel.avro4s.ToSchema._
-              import com.sksamuel.avro4s.ToValue._
-              import com.sksamuel.avro4s.SchemaFor._
-
-              com.sksamuel.avro4s.ToRecord.converter[$sig]($mapKey)
-            }
-         """
-      }
+       """
     }
 
     val tuples: Seq[Tree] = fieldsForType(tpe).map { f =>
