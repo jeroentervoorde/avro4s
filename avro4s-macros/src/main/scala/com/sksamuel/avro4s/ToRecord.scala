@@ -110,23 +110,53 @@ object ToRecord {
       }.flatMap(_.paramLists.headOption).getOrElse(Nil)
     }
 
+    def isBuiltIn(f: Type) : Boolean = {
+      f =:= typeOf[Boolean] ||
+      f =:= typeOf[String] ||
+      f =:= typeOf[Int] ||
+      f =:= typeOf[Float] ||
+      f =:= typeOf[Long] ||
+      f =:= typeOf[Double] ||
+      f <:< typeOf[UUID] ||
+      f <:< typeOf[Array[_]] ||
+      f <:< typeOf[BigDecimal] ||
+      f <:< typeOf[Iterable[_]] ||
+      f <:< typeOf[Option[_]] ||
+      f <:< typeOf[Enum[_]] ||
+      f <:< typeOf[Enumeration#Value] ||
+      f <:< typeOf[Either[_, _]]
+    }
+
     val converters: Seq[Tree] = fieldsForType(tpe).map { f =>
       val name = f.name.asInstanceOf[c.TermName]
       val mapKey: String = name.decodedName.toString
       val sig = f.typeSignature
-      if (f.isClass) {
-        q"""{
+
+      f.typeSignature match {
+        case r if !isBuiltIn(r) =>
+          q"""{
             import com.sksamuel.avro4s.ToSchema._
             import com.sksamuel.avro4s.ToValue._
             import com.sksamuel.avro4s.SchemaFor._
 
             val toRecord = ToRecord[$sig]
-            com.sksamuel.avro4s.ToRecord.converter[$sig]($mapKey)(com.sksamuel.avro4s.ToRecord[$sig].GenericRecord(toRecord))
+            com.sksamuel.avro4s.ToRecord.converter[$sig]($mapKey)(com.sksamuel.avro4s.ToValue.GenericWriter[$sig](toRecord))
           }
-       """
-      } else {
+          """
+        case t @ TypeRef(_, _, optType :: Nil) if !isBuiltIn(optType) =>
+          q"""{
+              import com.sksamuel.avro4s.ToSchema._
+              import com.sksamuel.avro4s.ToValue._
+              import com.sksamuel.avro4s.SchemaFor._
 
-        q"""{
+              val toRecord = ToRecord[$optType]
+              implicit val toValue = com.sksamuel.avro4s.ToValue.GenericWriter[$optType](toRecord)
+
+              com.sksamuel.avro4s.ToRecord.converter[$sig]($mapKey)
+            }
+         """
+        case _ =>
+          q"""{
               import com.sksamuel.avro4s.ToSchema._
               import com.sksamuel.avro4s.ToValue._
               import com.sksamuel.avro4s.SchemaFor._
@@ -134,7 +164,7 @@ object ToRecord {
               com.sksamuel.avro4s.ToRecord.converter[$sig]($mapKey)
             }
          """
-        }
+      }
     }
 
     val tuples: Seq[Tree] = fieldsForType(tpe).map { f =>
@@ -163,7 +193,7 @@ object ToRecord {
     )
   }
 
-  def converter[T](name: String)(implicit toValue: ToValue[T]): (String, ToValue[T]) = (name -> toValue)
+  def converter[T](name: String)(implicit toValue: Lazy[ToValue[T]]): (String, ToValue[T]) = (name -> toValue.value)
 
   def tuple[T](name: String, value: T)(implicit toValue: ToValue[T]): (String, Any) = name -> toValue(value)
 

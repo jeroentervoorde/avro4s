@@ -251,7 +251,7 @@ object SchemaFor {
   }
 
   // builds a schema for a type T
-  def schemaBuilder[T](implicit toSchema: ToSchema[T]): Schema = toSchema()
+  def schemaBuilder[T](implicit toSchema: Lazy[ToSchema[T]]): Schema = toSchema.value()
 
   def unionBuilder(name: String, schemas: Set[Schema], optional: Boolean): Schema.Field = {
     val sortedSchemas = (if (optional) schemas + Schema.create(Schema.Type.NULL) else schemas).toSeq.sortBy(_.getName)
@@ -271,8 +271,8 @@ object SchemaFor {
 
   // given a name and a type T, builds the schema field for that type T. A schema field might itself contain
   // a nested record schema if T is a class. The provided annos are a wrapper around annotations.
-  def fieldBuilder[T](name: String, annos: Seq[Anno], default: Any)(implicit toSchema: ToSchema[T]): Schema.Field = {
-    fieldBuilder(name, annos, toSchema(), default)
+  def fieldBuilder[T](name: String, annos: Seq[Anno], default: Any)(implicit toSchema: Lazy[ToSchema[T]]): Schema.Field = {
+    fieldBuilder(name, annos, toSchema.value.apply(), default)
   }
 
   private def fieldBuilder(name: String, annos: Seq[Anno], schema: Schema, default: Any): Schema.Field = {
