@@ -110,35 +110,67 @@ object ToRecord {
       }.flatMap(_.paramLists.headOption).getOrElse(Nil)
     }
 
+    val converters: Seq[Tree] = fieldsForType(tpe).map { f =>
+      val name = f.name.asInstanceOf[c.TermName]
+      val mapKey: String = name.decodedName.toString
+      val sig = f.typeSignature
+      if (f.isClass) {
+        q"""{
+            import com.sksamuel.avro4s.ToSchema._
+            import com.sksamuel.avro4s.ToValue._
+            import com.sksamuel.avro4s.SchemaFor._
+
+            val toRecord = ToRecord[$sig]
+            com.sksamuel.avro4s.ToRecord.converter[$sig]($mapKey)(com.sksamuel.avro4s.ToRecord[$sig].GenericRecord(toRecord))
+          }
+       """
+      } else {
+
+        q"""{
+              import com.sksamuel.avro4s.ToSchema._
+              import com.sksamuel.avro4s.ToValue._
+              import com.sksamuel.avro4s.SchemaFor._
+
+              com.sksamuel.avro4s.ToRecord.converter[$sig]($mapKey)
+            }
+         """
+        }
+    }
+
     val tuples: Seq[Tree] = fieldsForType(tpe).map { f =>
       val name = f.name.asInstanceOf[c.TermName]
       val mapKey: String = name.decodedName.toString
       val sig = f.typeSignature
       q"""{
-            import com.sksamuel.avro4s.ToSchema._
-            import com.sksamuel.avro4s.ToValue._
-            import com.sksamuel.avro4s.SchemaFor._
-            com.sksamuel.avro4s.ToRecord.tuple[$sig]($mapKey, t.$name : $sig)
+            com.sksamuel.avro4s.ToRecord.tuple[$sig]($mapKey, t.$name : $sig)(converters($mapKey).asInstanceOf[com.sksamuel.avro4s.ToValue[$sig]])
           }
        """
     }
 
+
     c.Expr[ToRecord[T]](
       q"""new com.sksamuel.avro4s.ToRecord[$tpe] {
-            private val schema = SchemaFor[$tpe]()
+            private val schemaFor : SchemaFor[$tpe] = SchemaFor[$tpe]
+            private val converters = Map(..$converters)
+
             def apply(t : $tpe): org.apache.avro.generic.GenericRecord = {
+
               val map: Map[String, Any] = Map(..$tuples)
-              com.sksamuel.avro4s.ToRecord.createRecord[$tpe](map, schema)
+              com.sksamuel.avro4s.ToRecord.createRecord[$tpe](map)(schemaFor)
             }
           }
         """
     )
   }
 
-  def tuple[T](name: String, value: T)(implicit toValue: Lazy[ToValue[T]]): (String, Any) = name -> toValue.value(value)
+  def converter[T](name: String)(implicit toValue: ToValue[T]): (String, ToValue[T]) = (name -> toValue)
 
-  def createRecord[T](map: Map[String, Any], schema: Schema): GenericRecord = {
-    val record = new GenericData.Record(schema)
+  def tuple[T](name: String, value: T)(implicit toValue: ToValue[T]): (String, Any) = name -> toValue(value)
+
+  def createRecord[T](map: Map[String, Any])
+                     (implicit schemaFor: SchemaFor[T]): GenericRecord = {
+
+    val record = new GenericData.Record(schemaFor())
     map.foreach { case (key, value) => record.put(key, value) }
     record
   }
