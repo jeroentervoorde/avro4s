@@ -188,22 +188,26 @@ object FromRecord {
     val companion = tpe.typeSymbol.companion
 
     val converters: Seq[Tree] = fieldsForType(tpe).map { f =>
-      val name = f.name.asInstanceOf[c.TermName]
-      val decoded: String = name.decodedName.toString
       val sig = f.typeSignature
       q"""{
           import com.sksamuel.avro4s.ToSchema._
           import com.sksamuel.avro4s.ToValue._
           import com.sksamuel.avro4s.FromValue._
 
-         com.sksamuel.avro4s.FromRecord.converter[$sig]($decoded)  }"""
+         com.sksamuel.avro4s.FromRecord.converter[$sig] }"""
     }
 
-    val fromValues: Seq[Tree] = fieldsForType(tpe).map { f =>
-      val name = f.name.asInstanceOf[c.TermName]
-      val decoded: String = name.decodedName.toString
-      val sig = f.typeSignature
-      q"""{  com.sksamuel.avro4s.FromRecord.read[$sig](record, $decoded)(converters($decoded).asInstanceOf[com.sksamuel.avro4s.FromValue[$sig]])  }"""
+    val fromValues: Seq[Tree] = fieldsForType(tpe).zipWithIndex.map {
+      case (f, idx) =>
+        val name = f.name.asInstanceOf[c.TermName]
+        val decoded: String = name.decodedName.toString
+        val sig = f.typeSignature
+        q"""
+          {
+            val converter = converters($idx).asInstanceOf[com.sksamuel.avro4s.FromValue[$sig]]
+            converter(record.get($decoded), record.getSchema.getField($decoded))
+          }
+        """
     }
 
     c.Expr[FromRecord[T]](
@@ -212,21 +216,17 @@ object FromRecord {
             import com.sksamuel.avro4s.ToValue._
             import com.sksamuel.avro4s.FromValue._
 
-            val converters = Map(..$converters)
+            private val converters = Array(..$converters)
 
             def apply(record: org.apache.avro.generic.GenericRecord): $tpe = {
-               $companion.apply(..$fromValues)
+              $companion.apply(..$fromValues)
             }
           }
         """
     )
   }
 
-  def converter[T](name: String)(implicit fromValue: Lazy[FromValue[T]]): (String, FromValue[T]) = {
-    name -> fromValue.value
-  }
-
-  def read[T](record: GenericRecord, name: String)(implicit fromValue: FromValue[T]): T = {
-    fromValue(record.get(name), record.getSchema.getField(name))
+  def converter[T](implicit fromValue: Lazy[FromValue[T]]): FromValue[T] = {
+    fromValue.value
   }
 }
