@@ -187,11 +187,23 @@ object FromRecord {
 
     val companion = tpe.typeSymbol.companion
 
+    val converters: Seq[Tree] = fieldsForType(tpe).map { f =>
+      val name = f.name.asInstanceOf[c.TermName]
+      val decoded: String = name.decodedName.toString
+      val sig = f.typeSignature
+      q"""{
+          import com.sksamuel.avro4s.ToSchema._
+          import com.sksamuel.avro4s.ToValue._
+          import com.sksamuel.avro4s.FromValue._
+
+         com.sksamuel.avro4s.FromRecord.converter[$sig]($decoded)  }"""
+    }
+
     val fromValues: Seq[Tree] = fieldsForType(tpe).map { f =>
       val name = f.name.asInstanceOf[c.TermName]
       val decoded: String = name.decodedName.toString
       val sig = f.typeSignature
-      q"""{  com.sksamuel.avro4s.FromRecord.read[$sig](record, $decoded)  }"""
+      q"""{  com.sksamuel.avro4s.FromRecord.read[$sig](record, $decoded)(converters($decoded).asInstanceOf[com.sksamuel.avro4s.FromValue[$sig]])  }"""
     }
 
     c.Expr[FromRecord[T]](
@@ -199,6 +211,9 @@ object FromRecord {
             import com.sksamuel.avro4s.ToSchema._
             import com.sksamuel.avro4s.ToValue._
             import com.sksamuel.avro4s.FromValue._
+
+            val converters = Map(..$converters)
+
             def apply(record: org.apache.avro.generic.GenericRecord): $tpe = {
                $companion.apply(..$fromValues)
             }
@@ -207,7 +222,11 @@ object FromRecord {
     )
   }
 
-  def read[T](record: GenericRecord, name: String)(implicit fromValue: Lazy[FromValue[T]]): T = {
-    fromValue.value(record.get(name), record.getSchema.getField(name))
+  def converter[T](name: String)(implicit fromValue: Lazy[FromValue[T]]): (String, FromValue[T]) = {
+    name -> fromValue.value
+  }
+
+  def read[T](record: GenericRecord, name: String)(implicit fromValue: FromValue[T]): T = {
+    fromValue(record.get(name), record.getSchema.getField(name))
   }
 }
